@@ -1,7 +1,9 @@
 pandas
+numpy
 requests
 beautifulsoup4
 lxml
 streamlit
 plotly
 openpyxl
+yfinance
