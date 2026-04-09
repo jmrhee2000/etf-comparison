@@ -180,7 +180,15 @@ def detect_signals(portfolio_df: pd.DataFrame, etf_name: str) -> pd.DataFrame:
             q_curr = c["quantity"]
             q_pct = ((q_curr - q_prev) / q_prev * 100) if q_prev > 0 else 0
 
-            if w_change > 1.5 and q_pct > 3:
+            if w_change > 0.5 and q_pct > 3:
+                # Classify buy intensity
+                intensity_score = w_change * 0.6 + abs(q_pct) * 0.02 + c["weight"] * 0.1
+                if w_change >= 3.0 or (w_change >= 2.0 and q_pct >= 30):
+                    grade = "STRONG"
+                elif w_change >= 1.5 or (w_change >= 1.0 and q_pct >= 15):
+                    grade = "MODERATE"
+                else:
+                    grade = "MILD"
                 signals.append({
                     "date": curr_date,
                     "etf": etf_name,
@@ -189,6 +197,10 @@ def detect_signals(portfolio_df: pd.DataFrame, etf_name: str) -> pd.DataFrame:
                     "norm_name": norm,
                     "weight": c["weight"],
                     "detail": f"비중 +{w_change:.2f}%, 수량 +{q_pct:.1f}%",
+                    "intensity": grade,
+                    "intensity_score": round(intensity_score, 2),
+                    "weight_change": w_change,
+                    "qty_change_pct": q_pct,
                 })
             elif w_change < -1.5 and q_pct < -3:
                 signals.append({

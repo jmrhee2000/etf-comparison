@@ -176,14 +176,67 @@ if page == "오늘의 브리핑":
 
             sig_name_kr = signal_labels.get(sig["signal"], sig["signal"])
 
-            body = f"**{sig['name']}**\n\n"
+            # Intensity grading for BIG_INCREASE
+            intensity = sig.get("intensity", "")
+            intensity_tag = ""
+            intensity_advice = ""
+            if sig["signal"] == "BIG_INCREASE" and intensity:
+                grade_kr = {"STRONG": "강", "MODERATE": "중", "MILD": "약"}.get(intensity, "")
+                grade_stars = {"STRONG": "★★★", "MODERATE": "★★☆", "MILD": "★☆☆"}.get(intensity, "")
+                intensity_tag = f" [{grade_stars} 강도: {grade_kr}]"
+                if intensity == "STRONG":
+                    intensity_advice = (
+                        "- **매수 강도 판단**: 비중 3%p 이상 급증 또는 수량 30%+ 증가. "
+                        "과거 STRONG급 대량매수는 **10일 승률 59%, 평균 +4.7%**로 "
+                        "가장 높은 단기 수익률을 기록. 단, 20일 이상 보유 시 "
+                        "수익률이 역전되는 경향이 있어 **단기 트레이딩(5~10일)에 적합**.\n"
+                    )
+                elif intensity == "MODERATE":
+                    intensity_advice = (
+                        "- **매수 강도 판단**: 비중 1.5~3%p 증가 또는 수량 15%+ 증가. "
+                        "과거 MODERATE급은 **20일 승률 54%, 평균 +4.7%**로 "
+                        "**중기 홀딩(2~4주)에 가장 적합**한 시그널.\n"
+                    )
+                elif intensity == "MILD":
+                    intensity_advice = (
+                        "- **매수 강도 판단**: 비중 0.5~1.5%p 소폭 증가. "
+                        "탐색적 매수로 보이며, 단독으로는 신뢰도가 낮음. "
+                        "다른 시그널(컨센서스, 확신매수)과 겹칠 때만 추종 권장.\n"
+                    )
+
+            body = f"**{sig['name']}**{intensity_tag}\n\n"
             body += f"- **시그널**: {etf_label}가 {sig_date}에 {sig_name_kr} ({sig['detail']})\n"
-            if stats:
+
+            # Intensity-specific stats
+            if sig["signal"] == "BIG_INCREASE" and intensity:
+                bi_bt = bt[
+                    (bt["signal"] == "BIG_INCREASE")
+                ].copy()
+                if "intensity" not in bi_bt.columns:
+                    bi_info = all_sigs[all_sigs["signal"] == "BIG_INCREASE"][
+                        ["date", "norm_name", "intensity"]].drop_duplicates()
+                    bi_bt = bi_bt.merge(bi_info, on=["date", "norm_name"], how="left",
+                                        suffixes=("", "_sig"))
+                grade_bt = bi_bt[bi_bt["intensity"] == intensity].dropna(subset=["return_10d"])
+                if len(grade_bt) >= 3:
+                    g_wr = (grade_bt["return_10d"] > 0).mean() * 100
+                    g_avg = grade_bt["return_10d"].mean()
+                    body += (f"- **{intensity}급 과거 실적**: {len(grade_bt)}건 중 "
+                             f"10일 후 승률 **{g_wr:.0f}%**, "
+                             f"평균 수익률 **{g_avg:+.1f}%**\n")
+                elif stats:
+                    body += (f"- **대량매수 전체 과거 실적**: {stats['n']}건 중 "
+                             f"10일 후 승률 **{stats['wr']:.0f}%**, "
+                             f"평균 수익률 **{stats['avg']:+.1f}%**\n")
+            elif stats:
                 body += (f"- **과거 실적**: 이 유형의 시그널 {stats['n']}건 중 "
                          f"10일 후 승률 **{stats['wr']:.0f}%**, "
                          f"평균 수익률 **{stats['avg']:+.1f}%**\n")
+
+            if intensity_advice:
+                body += intensity_advice
+
             if both_hold:
-                # Get weights from both
                 tf_latest = tf_df[tf_df["date"] == get_dates(tf_df)[-1]]
                 ko_latest = ko_df[ko_df["date"] == get_dates(ko_df)[-1]]
                 tf_w = tf_latest[tf_latest["norm_name"] == sig["norm_name"]]
@@ -191,17 +244,30 @@ if page == "오늘의 브리핑":
                 if not tf_w.empty and not ko_w.empty:
                     body += (f"- **양 펀드 비중**: 타임폴리오 {tf_w.iloc[0]['weight']:.1f}% / "
                              f"Koact {ko_w.iloc[0]['weight']:.1f}%\n")
-            body += f"- **판단 근거**: 펀드매니저가 의도적으로 비중을 확대한 종목. "
+
+            body += f"- **판단 근거**: "
             if sig["signal"] == "BIG_INCREASE":
-                body += ("수량과 비중이 동시에 급증하여 '적극 매수' 판단. "
-                         "워크포워드 백테스트 기준 가장 높은 승률을 보이는 시그널.")
+                if intensity == "STRONG":
+                    body += ("펀드매니저가 대규모로 비중을 확대한 최고 확신 종목. "
+                             "단기(5~10일) 추종 매수에 적합.")
+                elif intensity == "MODERATE":
+                    body += ("펀드매니저가 유의미하게 비중을 확대한 종목. "
+                             "중기(2~4주) 홀딩에 적합.")
+                else:
+                    body += ("소폭 비중 확대. 탐색적 매수로 보이며, "
+                             "다른 확인 시그널이 있을 때 추종 권장.")
             elif sig["signal"] == "CONVICTION_BUY":
                 body += "5거래일 연속 비중 증가로 펀드매니저의 확신이 반영된 매수."
             elif sig["signal"] == "NEW_ENTRY":
                 body += "신규 편입 종목으로 펀드매니저가 새롭게 주목하는 종목."
             body += consensus_tag
 
-            if stats and stats["wr"] >= 60:
+            # Display color based on intensity + stats
+            if sig["signal"] == "BIG_INCREASE" and intensity == "STRONG":
+                st.success(body)
+            elif sig["signal"] == "BIG_INCREASE" and intensity == "MODERATE":
+                st.info(body)
+            elif stats and stats["wr"] >= 60:
                 st.success(body)
             elif stats and stats["wr"] >= 50:
                 st.info(body)
